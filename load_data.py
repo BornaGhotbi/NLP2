@@ -16,6 +16,22 @@ punctuations= ["\"","(",")","*",",","-","_",".","~","%","^","&","!","#"
                "|","{","}","٫",";",">","<","1","2","3","4","5","6","7","8","9","0"]
 
 
+
+def load_targets():
+    filepath_source = "./traindev/rumoreval-subtaskA-train.json"
+    train = json.load(codecs.open(filepath_source, 'r', 'utf-8-sig'))
+
+def class2num(str):
+    if str=="comment":
+        return 1
+    elif str== "support":
+        return 2
+    elif str=="query":
+        return 3
+    elif str=="deny":
+        return 4
+
+
 def load_google_vector():
     global model
     model = gensim.models.KeyedVectors.load_word2vec_format('./model/GoogleNews-vectors-negative300.bin.gz', binary=True)
@@ -63,7 +79,7 @@ def load_tweet(path,source_id):
     conversation["source_id"] = str(source_id)
     conversation["reply_to"] = str(tweet_raw["in_reply_to_status_id"])
     conversation["vector"]=tweet2v(conversation)
-    conversation["features"]=tweet2feature(conversation)
+    # conversation["features"]=tweet2feature(conversation)
     conversation["num_followers"]=tweet_raw["user"]["followers_count"]
     return conversation
 
@@ -90,7 +106,7 @@ def relation2other(conversation):
     similarity2others=0
 
     words1=conversation["words"]
-    words2=tweets[conversation["source"]]["words"]
+    words2=tweets[conversation["source_id"]]["words"]
     if len(words1) > 0 and len(words2) > 0:
         similarity2source= model.n_similarity(words1, words2)
 
@@ -99,7 +115,7 @@ def relation2other(conversation):
         similarity2reply2= model.n_similarity(words1, words2)
 
     words2=[]
-    for tweet_id in tweets[conversation["source"]]["replies"]:
+    for tweet_id in tweets[conversation["source_id"]]["replies"]:
         words2.append(tweets[tweet_id])
     flatten = lambda words2: [item for sublist in words2 for item in sublist]
     if len(words1) > 0 and len(flatten) > 0:
@@ -195,38 +211,42 @@ def sentimentscore(tw):
         return analysis.sentiment.polarity
 
 
-def tweet2feature(conversation):
-    features=[]
-
-    features.append(conversation["vectror"])
-    features.append(is_reply(conversation))
-    features.append(relation2other(conversation))
-    features.append(punctuationanalysis(conversation))
-    features.append(has_url(conversation))
-    features.append(negationwordcount(conversation))
-    features.append(swearwordcount(conversation))
-    features.append(capitalratio(conversation))
-    features.append(contentlength(conversation))
-    features.append(poscount(conversation))
-    features.append(supportwordcount(conversation))
-    features.append(sentimentscore(conversation))
-    features.append(conversation["num_followers"])
-    conversation["features"]=features
-    return conversation
+def tweet2features():
+    for conversation in tweets:
+    print(conversation)
+        features=[]
+        features.append(conversation["vector"])
+        features.append(is_reply(conversation))
+        features.append(relation2other(conversation))
+        features.append(punctuationanalysis(conversation))
+        features.append(has_url(conversation))
+        features.append(negationwordcount(conversation))
+        features.append(swearwordcount(conversation))
+        features.append(capitalratio(conversation))
+        features.append(contentlength(conversation))
+        features.append(poscount(conversation))
+        features.append(supportwordcount(conversation))
+        features.append(sentimentscore(conversation))
+        features.append(conversation["num_followers"])
+        conversation["features"]=features
+        tweets[conversation["id"]]=conversation
 
 branch_array=[]
+target_array=[]
 
 def build_branches():
     for tweet in tweets.values():
         if "structure" in tweet.keys() :
-            build_branch(tweet,tweet["structure"][tweet["id"]],[tweet["features"]])
+            build_branch(tweet,tweet["structure"][tweet["id"]],[tweet["features"]], [[class2num(tweet["id"])]])
 
 
-def build_branch(tweet,structure,array):
+def build_branch(tweet,structure,array, label_array):
     print("tweet", tweet)
 
     if len(structure)==0:
         branch_array.append(array)
+        target_array.append(label_array)
+
     else:
         for id in structure.keys():
             if id in tweets.keys():
@@ -234,15 +254,20 @@ def build_branch(tweet,structure,array):
                 build_branch(tweets[id],structure[id],array)
             else:
                 branch_array.append(array)
+                target_array.append(label_array)
 
-    return
+    return branch_array, label_array
 
 
 
+### for test
+branch_array= [[[1,2,3,4,5,6],[6,5,4,3,2,1],[1,2,3,4,5,5],[6,5,4,5,6,4]],
+[[3,2,3,3,5,3],[7,5,4,2,2,3],[1,2,1,4,1,1]],
+[[4,2,4,4,2,1],[5,5,1,3,5,8],[7,7,7,3,2,1],[6,1,3,4,4,8]]]
+target_array=[[3,1,1,2],[1,4,4],[1,3,2,2]]
+##### run
 model= load_google_vector()
 num_tweets=load_dataset()
-build_branches()
-print("br array",branch_array)
-
-
-
+tweet2features()
+# branch_array,target_array=build_branches()
+print(np.shape(branch_array),np.shape(target_array))
