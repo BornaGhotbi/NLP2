@@ -8,6 +8,7 @@ import nltk
 import re
 from textblob import TextBlob
 
+
 global model
 stop_words = set(stp.words('english'))
 tweets=dict()
@@ -18,8 +19,9 @@ punctuations= ["\"","(",")","*",",","-","_",".","~","%","^","&","!","#"
 
 
 def load_targets():
-    filepath_source = "./traindev/rumoreval-subtaskA-train.json"
+    filepath_source = './traindev/rumoureval-subtaskA-train.json'
     train = json.load(codecs.open(filepath_source, 'r', 'utf-8-sig'))
+    return train
 
 def class2num(str):
     if str=="comment":
@@ -59,6 +61,7 @@ def load_dataset():
 
 
 def load_tweet(path,source_id):
+    global model
     tweet_raw = json.load(codecs.open(path, 'r', 'utf-8-sig'))
     conversation = dict()
     conversation["id"] = str(tweet_raw["id"])
@@ -72,14 +75,14 @@ def load_tweet(path,source_id):
             conversation["url"]=None
             for pt in punctuations:
                 word=word.replace(pt,"")
-            if word not in stop_words and "@" not in word:
+            if  word in model and word not in stop_words and word != "":
                 words.append(word)
+
     conversation["text"] = tmp
     conversation["words"]=words
     conversation["source_id"] = str(source_id)
     conversation["reply_to"] = str(tweet_raw["in_reply_to_status_id"])
     conversation["vector"]=tweet2v(conversation)
-    # conversation["features"]=tweet2feature(conversation)
     conversation["num_followers"]=tweet_raw["user"]["followers_count"]
     return conversation
 
@@ -88,9 +91,9 @@ def tweet2v(conversation):
     global model
     num_features = 300
     temp_rep = np.zeros(num_features)
-    for word in conversation["words"]:
-        if word in model:
-            temp_rep += model[word ]
+    if len(conversation["words"])!=0:
+        for word in conversation["words"]:
+            temp_rep += model[word]
     return temp_rep/len(conversation["words"])
 
 #is reply
@@ -139,7 +142,7 @@ def punctuationanalysis(tw):
     if tw['text'].find('.') >= 0:
         hasperiod = 0
 
-    return [hasqmark,hasemark,hasperiod]
+    return hasqmark,hasemark,hasperiod
 
 
 
@@ -179,7 +182,7 @@ def contentlength(tw):
     for word in tw['text']:
         charcount+=len(nltk.word_tokenize(word))
     wordcount = len(nltk.word_tokenize(tw['text']))
-    return [charcount,wordcount]
+    return charcount,wordcount
 
 def poscount(tw):
     postag = []
@@ -192,7 +195,7 @@ def poscount(tw):
                 poscount[g1[1]] = 1
             else:
                 poscount[g1[1]] += 1
-    return poscount
+    return poscount.values()
 
 def supportwordcount(tw):
     tokens = nltk.word_tokenize(re.sub(r'([^\s\w]|_)+','', tw['text'].lower()))
@@ -212,62 +215,94 @@ def sentimentscore(tw):
 
 
 def tweet2features():
-    for conversation in tweets:
-    print(conversation)
+    for tweet_id in tweets:
+        conversation=tweets[tweet_id]
         features=[]
-        features.append(conversation["vector"])
+        list=conversation["vector"]
+        for item in list:
+            if item!=item:
+                features.append(0)
+            else:
+                features.append(item)
         features.append(is_reply(conversation))
-        features.append(relation2other(conversation))
-        features.append(punctuationanalysis(conversation))
+        # features.append(relation2other(conversation))
+        list =punctuationanalysis(conversation)
+        for item in list:
+            features.append(item)
         features.append(has_url(conversation))
         features.append(negationwordcount(conversation))
         features.append(swearwordcount(conversation))
         features.append(capitalratio(conversation))
-        features.append(contentlength(conversation))
-        features.append(poscount(conversation))
+        list = contentlength(conversation)
+        for item in list:
+            features.append(item)
+        # list=poscount(conversation)
+        # for item in list:
+        #     features.append(item)
         features.append(supportwordcount(conversation))
         features.append(sentimentscore(conversation))
         features.append(conversation["num_followers"])
-        conversation["features"]=features
+        # print("features",len(features),features)
+        conversation["features"]= features
         tweets[conversation["id"]]=conversation
 
 branch_array=[]
 target_array=[]
+max_depth = 0
+
+
 
 def build_branches():
     for tweet in tweets.values():
         if "structure" in tweet.keys() :
-            build_branch(tweet,tweet["structure"][tweet["id"]],[tweet["features"]], [[class2num(tweet["id"])]])
+            if tweet["id"] in train:
+                label=class2num(train[tweet["id"]])
+            else:
+                label=1
+            build_branch4tweet(tweet["structure"][tweet["id"]],[tweet["features"]], [label],1)
 
 
-def build_branch(tweet,structure,array, label_array):
-    print("tweet", tweet)
-
+def build_branch4tweet(structure,array, label_array,branch_depth):
+    global max_depth
     if len(structure)==0:
         branch_array.append(array)
         target_array.append(label_array)
+        if max_depth<branch_depth:
+            max_depth=branch_depth
 
     else:
         for id in structure.keys():
             if id in tweets.keys():
                 array.append(tweets[id]["features"])
-                build_branch(tweets[id],structure[id],array)
+                if id in train:
+                    label = class2num(train[id])
+                else:
+                    label = 1
+                label_array.append(label)
+                build_branch4tweet(structure[id],array,label_array,branch_depth+1)
             else:
                 branch_array.append(array)
                 target_array.append(label_array)
+                if max_depth < branch_depth:
+                    max_depth = branch_depth
 
-    return branch_array, label_array
 
 
 
-### for test
-branch_array= [[[1,2,3,4,5,6],[6,5,4,3,2,1],[1,2,3,4,5,5],[6,5,4,5,6,4]],
-[[3,2,3,3,5,3],[7,5,4,2,2,3],[1,2,1,4,1,1]],
-[[4,2,4,4,2,1],[5,5,1,3,5,8],[7,7,7,3,2,1],[6,1,3,4,4,8]]]
-target_array=[[3,1,1,2],[1,4,4],[1,3,2,2]]
 ##### run
 model= load_google_vector()
 num_tweets=load_dataset()
 tweet2features()
-# branch_array,target_array=build_branches()
-print(np.shape(branch_array),np.shape(target_array))
+train = load_targets()
+build_branches()
+
+##Branch array: array that includes branches, each branch include tweets that are Vectors(1,313)
+##target array: array that include label of branches [1,2,3,4]
+print("array branch",len(branch_array),len(branch_array[1]),len(branch_array[1][0]))
+print("array target",len(target_array),len(target_array[1]))
+print("max branch depth",max_depth)
+
+
+
+
+
