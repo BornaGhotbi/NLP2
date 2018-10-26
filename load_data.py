@@ -191,14 +191,28 @@ def contentlength(tw):
 def poscount(tw):
     postag = []
     poscount = {}
-    word_tokens = nltk.word_tokenize(re.sub(r'([^\s\w]|_)+', '', tw['text'].lower()))
-    for word in word_tokens:
-        postag = nltk.pos_tag(word)
-        for g1 in postag:
-            if g1[1] not in poscount:
-                poscount[g1[1]] = 1
-            else:
-                poscount[g1[1]] += 1
+    poscount['Noun']=0
+    poscount['Verb']=0
+    poscount['Adjective'] = 0
+    poscount['Pronoun']=0
+    poscount['Adverb']=0
+    Nouns = {'NN','NNS','NNP','NNPS'}
+    Verbs={'VB','VBP','VBZ','VBN','VBG','VBD','To'}
+    word_tokens = nltk.word_tokenize(re.sub(r'([^\s\w]|_)+', '', tw['text']))
+    postag = nltk.pos_tag(word_tokens)
+    print(postag)
+    for g1 in postag:
+     print(g1)
+     if g1[1] in Nouns:
+        poscount['Noun'] += 1
+     elif g1[1] in Verbs:
+         poscount['Verb']+= 1
+     elif g1[1]=='ADJ'or g1[1]=='JJ':
+         poscount['Adjective']+=1
+     elif g1[1]=='PRP' or g1[1]=='PRON':
+         poscount['Pronoun']+=1
+     elif g1[1]=='ADV':
+         poscount['Adverb']+=1
     return poscount.values()
 
 def supportwordcount(tw):
