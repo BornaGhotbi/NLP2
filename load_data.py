@@ -113,14 +113,18 @@ def relation2other(conversation):
     if len(words1) > 0 and len(words2) > 0:
         similarity2source= model.n_similarity(words1, words2)
 
-    words2=tweets[conversation["reply_to"]]["words"]
-    if len(words1) > 0 and len(words2) > 0:
-        similarity2reply2= model.n_similarity(words1, words2)
+    if conversation["reply_to"] in tweets:
+        words2=tweets[conversation["reply_to"]]["words"]
+        if len(words1) > 0 and len(words2) > 0:
+            similarity2reply2= model.n_similarity(words1, words2)
+    else:
+        similarity2reply2=0
 
     words2=[]
     for tweet_id in tweets[conversation["source_id"]]["replies"]:
-        words2.append(tweets[tweet_id])
-    flatten = lambda words2: [item for sublist in words2 for item in sublist]
+        if tweet_id in tweets:
+            words2.append(tweets[tweet_id]["words"])
+    flatten = [item for sublist in words2 for item in sublist]
     if len(words1) > 0 and len(flatten) > 0:
         similarity2others= model.n_similarity(words1, flatten)
     return [similarity2reply2,similarity2others,similarity2source]
@@ -225,7 +229,10 @@ def tweet2features():
             else:
                 features.append(item)
         features.append(is_reply(conversation))
-        # features.append(relation2other(conversation))
+
+        list=relation2other(conversation)
+        for item in list:
+            features.append(item)
         list =punctuationanalysis(conversation)
         for item in list:
             features.append(item)
@@ -241,34 +248,36 @@ def tweet2features():
         #     features.append(item)
         features.append(supportwordcount(conversation))
         features.append(sentimentscore(conversation))
-        features.append(conversation["num_followers"])
-        # print("features",len(features),features)
+        # features.append(conversation["num_followers"])
+        print("features",len(features),features)
         conversation["features"]= features
         tweets[conversation["id"]]=conversation
-
-branch_array=[]
-target_array=[]
-max_depth = 0
 
 
 
 def build_branches():
+
+    train = load_targets()
     for tweet in tweets.values():
         if "structure" in tweet.keys() :
             if tweet["id"] in train:
                 label=class2num(train[tweet["id"]])
             else:
                 label=1
-            build_branch4tweet(tweet["structure"][tweet["id"]],[tweet["features"]], [label],1)
+            build_branch4tweet(train, tweet["structure"][tweet["id"]],[tweet["features"]], [label],1)
 
-
-def build_branch4tweet(structure,array, label_array,branch_depth):
-    global max_depth
+branch_array=[]
+target_array=[]
+depth_dict={}
+def build_branch4tweet(train,structure,array, label_array,branch_depth):
+    global temp
     if len(structure)==0:
         branch_array.append(array)
         target_array.append(label_array)
-        if max_depth<branch_depth:
-            max_depth=branch_depth
+        if branch_depth in depth_dict:
+            depth_dict[branch_depth]+=1
+        else:
+            depth_dict[branch_depth]=1
 
     else:
         for id in structure.keys():
@@ -279,30 +288,35 @@ def build_branch4tweet(structure,array, label_array,branch_depth):
                 else:
                     label = 1
                 label_array.append(label)
-                build_branch4tweet(structure[id],array,label_array,branch_depth+1)
+                build_branch4tweet(train,structure[id],array,label_array,branch_depth+1)
             else:
                 branch_array.append(array)
                 target_array.append(label_array)
-                if max_depth < branch_depth:
-                    max_depth = branch_depth
+                if branch_depth in depth_dict:
+                    depth_dict[branch_depth] += 1
+                else:
+                    depth_dict[branch_depth] = 1
 
 
 
 
 ##### run
-model= load_google_vector()
-num_tweets=load_dataset()
-tweet2features()
-train = load_targets()
-build_branches()
 
-##Branch array: array that includes branches, each branch include tweets that are Vectors(1,313)
-##target array: array that include label of branches [1,2,3,4]
-print("array branch",len(branch_array),len(branch_array[1]),len(branch_array[1][0]))
-print("array target",len(target_array),len(target_array[1]))
-print("max branch depth",max_depth)
+def main():
+    model = load_google_vector()
+    num_tweets = load_dataset()
+    tweet2features()
+    build_branches()
+    ##Branch array: array that includes branches, each branch include tweets that are Vectors(1,313)
+    ##target array: array that include label of branches [1,2,3,4]
 
+    print("array branch", len(branch_array), len(branch_array[1][0]))
+    print("array target", len(target_array))
+    print("max branch depth", depth_dict)
 
+    return branch_array,target_array
+
+main()
 
 
 
